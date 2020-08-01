@@ -1,37 +1,64 @@
-from ctypes import wintypes, windll, create_unicode_buffer
 import time
 import json
 import requests
+import sys
+from macos_lib import MacOSLib
+from windows_lib import WindowsLib
+from linux_lib import LinuxLib
 
 apps = {}
 url = 'http://localhost:8080/apps'
 
-def getForegroundWindowTitle():
-    """Gets the active window title.
-    Uses cytype w/ win32 dll to handle reaching into the windows API.
-    Documentation: https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getforegroundwindow
-    ctype documentation: https://docs.python.org/3/library/ctypes.html
-    """
-    hWnd = windll.user32.GetForegroundWindow()
-    length = windll.user32.GetWindowTextLengthW(hWnd)
-    buf = create_unicode_buffer(length + 1)
-    windll.user32.GetWindowTextW(hWnd, buf, length + 1)
-
-    if buf.value:
-        titles = buf.value.split(' - ')
-        title = titles[-1]
-        return title
-    else:
+def getActiveWindowTitle(platform):
+    '''Returns the active window title - based on the provided platform'''
+    if platform in ['Windows', 'win32', 'cygwin']:
+        print('running windows')
+        return WindowsLib.getForegroundWindowTitle()
+    elif platform in ['Mac', 'darwin', 'os2', 'os2emx']:
+        print('running macos')
+        return MacOSLib.getActiveWindowTitleMacOs()
+    elif platform in ['linux']:
         return None
 
-while True:
-    app = getForegroundWindowTitle()
+def is_user_platform_supported(platform):
+    '''
+    Checks whether the platform is supported.
+    Returns True if the platform is supported and False if the platform is not supported.
+    '''
+    if platform in ['Windows', 'win32', 'cygwin']:
+        return True
+    elif platform in ['Mac', 'darwin', 'os2', 'os2emx']:
+        return True
+    elif platform in ['linux']:
+        return False
+
+def send_total_time_app(app):
+    '''Sends a request to POST the apps updated time usage.'''
+    total_time = apps[app]
+    app_obj = {"title": app, "time": total_time}
+    requests.post(url, json = app_obj)
+
+def get_initial_apps_and_times():
+    '''Makes a request to the server API to get a list of the stored apps/times.'''
+    response = requests.get(url)
+    apps = response.json()
+    print('Connected and running')
+
+user_platform = sys.platform
+if not is_user_platform_supported(user_platform):
+    print (user_platform + ' is not supported yet. Exiting program.')
+    exit()
+
+get_initial_apps_and_times()
+
+while True:    
+    app = getActiveWindowTitle(user_platform)
+    if app is None:
+        continue
+    
     if app in apps:
         apps[app] += 1
     else:
         apps[app] = 1
-    time.sleep(1)    
-
-    total_time = apps[app]
-    app_obj = {'title': app, 'time': total_time}
-    response = requests.post(url, json = app_obj)
+    time.sleep(1)  
+    send_total_time_app(app)
